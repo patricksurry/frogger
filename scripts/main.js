@@ -120,7 +120,7 @@ window.requestAnimationFrame = (function(){
         _highScore = 1000,
 
         // Define the number of lives the player has remaining before the game is over
-        _lives = 5,
+        _startLives = 5,
 
         // Define the number of milliseconds the player has to get their character to
         // the goal (60 seconds). If they take too long, they will lose a life
@@ -308,13 +308,13 @@ window.requestAnimationFrame = (function(){
     function onstart() {
         _score = 0;
         _timesAtGoal = 0;
-        _lives = 5;
+        _lives = _startLives;
 
         reset();
 
         Frogger.observer.publish("high-score-change", _highScore);
         Frogger.observer.publish("score-change", _score);
-        Frogger.observer.publish("game-reset", _lives);
+        Frogger.observer.publish("game-restart", _lives);
     }
 
     // The game loop executes on an interval at a rate dictated by value of the
@@ -372,6 +372,7 @@ window.requestAnimationFrame = (function(){
     // character and any obstacles on the game board
     function onload() {
         // Start the game loop running
+        freezePlayer();
         gameLoop();
     }
 
@@ -844,7 +845,7 @@ Frogger.ImageSprite.prototype = {
         _highScore = 0,
         _gameWon = false,
         _gameOver = false,
-
+        _firstStart = true,
         // Define a variable to store the initialized data from the game board module
         // defined previously - this will be populated later with data from that module
         _gameBoard = {};
@@ -881,32 +882,15 @@ Frogger.ImageSprite.prototype = {
 
     // Define a function to render the text "GAME OVER" to the <canvas>. This will only be
     // called when the game is over
-    function renderGameOver() {
 
-        // Use the Arcade Classic font as previously defined, and write the text centered
-        // around the given drawing position in white
+    function renderCenteredText(s, color) {
+        // Use the Arcade Classic font above, and write centered text in given color
         Frogger.drawingSurface.font = _font;
         Frogger.drawingSurface.textAlign = "center";
-        Frogger.drawingSurface.fillStyle = "#FFF";
-
-        // Write the text center aligned within the <canvas> and at the 9th row position
-        // from the top of the game board
-        Frogger.drawingSurface.fillText("GAME OVER", Frogger.drawingSurfaceWidth / 2, _gameBoard.rows[9]);
-    }
-
-    // Define a function to render the text "YOU WIN!" to the <canvas> which will be called
-    // when the player has won the game by reaching the home base position five times
-    function renderGameWon() {
-
-        // Use the Arcade Classic font as previously defined, and write the text centered
-        // around the given drawing position in yellow (hex value #FF0)
-        Frogger.drawingSurface.font = _font;
-        Frogger.drawingSurface.textAlign = "center";
-        Frogger.drawingSurface.fillStyle = "#FF0";
-
-        // Write the text center aligned within the <canvas> and at the 9th row position
-        // from the top of the game board
-        Frogger.drawingSurface.fillText("YOU WIN!", Frogger.drawingSurfaceWidth / 2, _gameBoard.rows[9]);
+        Frogger.drawingSurface.fillStyle = color || '#FFF';
+        Frogger.drawingSurface.fillText(s,
+            Frogger.drawingSurfaceWidth / 2,
+            _gameBoard.rows[9] - _gameBoard.grid.height * 0.2);
     }
 
     // Define a function to render the "TIME" label in the bottom-right corner of the
@@ -933,14 +917,20 @@ Frogger.ImageSprite.prototype = {
 
         // Only render the "GAME OVER" text if the game is actually over
         if (_gameOver) {
-            renderGameOver();
+            renderCenteredText("GAME OVER");
         }
 
-        // Only render the "YOU WIN!" text if the players has won the game
+        // Only render yellow "YOU WIN!" text if the players has won the game
         if (_gameWon) {
-            renderGameWon();
+            renderCenteredText("YOU WIN!", '#FF0');
+        }
+
+        if (_firstStart) {
+            renderCenteredText("READY HOPPER ONE!")
         }
     }
+
+    Frogger.observer.subscribe("game-restart", () => { _firstStart = false; });
 
     // When the game logic publishes a message declaring that the player has won the game,
     // set the local variable to indicate this also so that the "YOU WIN!" text will be
@@ -1066,7 +1056,7 @@ Frogger.ImageSprite.prototype = {
         Frogger.observer.subscribe("render-base-layer", render);
     }
 
-    function onreset(nLives) {
+    function onrestart(nLives) {
         // Define a variable representing the position from the top of the game board
         // to display the remaining lives
         var lifePositionTop;
@@ -1157,7 +1147,7 @@ Frogger.ImageSprite.prototype = {
     // initialize() function
     Frogger.observer.subscribe("game-board-initialize", initialize);
 
-    Frogger.observer.subscribe("game-reset", onreset);
+    Frogger.observer.subscribe("game-restart", onrestart);
 }(Frogger));
 
 // Define a namespace to store the individual obstacles and images to place on the game
@@ -1549,9 +1539,6 @@ Frogger.Character = (function(Frogger) {
 
         // Play the animation named "move-down", making it look like the character is moving
         this.playAnimation("move-down");
-
-
-
     };
 
     // Define a method to move the character one column to the left on the game board
@@ -1638,7 +1625,7 @@ Frogger.Character = (function(Frogger) {
 
         // Call the Character instance's renderAt() method, passing along its current
         // left and top position
-        _character.renderAt(_character.left, _character.top);
+        if (!_awaitStart) _character.renderAt(_character.left, _character.top);
     }
 
     // Define a function, to be executed when the player loses a life, which plays the
@@ -2172,6 +2159,14 @@ Frogger.Row = (function() {
         }
     }
 
+    function onrestart() {
+        // discard any landed frogs and clear goal state
+        var goals = _rows[0].obstacles.slice(0, 5);
+        _rows[0].obstacles = goals;
+        for (var i=0; i<goals.length; i++) {
+            goals[i].isMet = false;
+        }
+    }
     // When the game logic wishes the game board to reset, call the local reset() function
     Frogger.observer.subscribe("reset", reset);
 
@@ -2182,6 +2177,8 @@ Frogger.Row = (function() {
     // When the game board has initialized its properties and settings, call the local
     // initialize() function to place the rows and obstacles onto the game board
     Frogger.observer.subscribe("game-board-initialize", initialize);
+
+    Frogger.observer.subscribe("game-restart", onrestart);
 }(Frogger));
 
 // Now the code modules have been registered, kick off the game logic and start the game

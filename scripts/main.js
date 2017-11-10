@@ -13,6 +13,12 @@ var Frogger = (function() {
         // Get a reference to the background <canvas> element's 2-D drawing surface context
         backgroundDrawingSurface = backgroundCanvas.getContext("2d"),
 
+        hammertime = new Hammer(canvas,  {
+            recognizers: [
+                [Hammer.Swipe,{ direction: Hammer.DIRECTION_ALL }],
+            ]
+        }),
+
         // Get a reference to the <canvas> element's width and height, in pixels
         drawingSurfaceWidth = canvas.width,
         drawingSurfaceHeight = canvas.height;
@@ -28,6 +34,8 @@ var Frogger = (function() {
 
         // Expose the background <canvas> element's 2-D drawing surface context
         backgroundDrawingSurface: backgroundDrawingSurface,
+
+        hammertime: hammertime,
 
         // Define an object containing references to directions the characters in our game can
         // move in. We define it here globally for use across our whole code base
@@ -1735,6 +1743,14 @@ Frogger.Character = (function(Frogger) {
         }
     }, false);
 
+    Frogger.hammertime.on('swipe', function(ev) {
+        if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
+            move(ev.deltaX > 0 ? Frogger.direction.RIGHT : Frogger.direction.LEFT);
+        } else {
+            move(ev.deltaY > 0 ? Frogger.direction.DOWN : Frogger.direction.UP);
+        }
+    });
+/*
     // When the player taps in certain places on the game board on their touch-sensitive
     // screen, move the player's character in the appropriate direction on the game board
     // according to where the screen has been tapped. This is useful since users with
@@ -1759,6 +1775,7 @@ Frogger.Character = (function(Frogger) {
             move(Frogger.direction.DOWN);
         }
     }, false);
+*/
 
     // Expose the local getTop(), getPosition() and setPosition() methods so they are
     // available to other code modules

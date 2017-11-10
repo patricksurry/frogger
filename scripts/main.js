@@ -177,7 +177,6 @@ window.requestAnimationFrame = (function(){
     // Define a function to be called when all the player's lives have gone and the game
     // is declared over
     function gameOver() {
-
         // Pause the player's movements as they are no longer in the game
         freezePlayer();
 
@@ -265,7 +264,7 @@ window.requestAnimationFrame = (function(){
     function playerAtGoal() {
 
         // When the player reaches the goal, increase their score by 1000 points
-        increaseScore(1000);
+        increaseScore(500 + Math.floor(500 * _timeRemaining / _timeTotal));
 
         // Increment the value indicating the total number of times the player's character
         // has reached the goal
@@ -276,14 +275,12 @@ window.requestAnimationFrame = (function(){
         freezePlayer();
 
         if (_timesAtGoal < _maxTimesAtGoal) {
-
             // The player must enter the goal a total of 5 times, as indicated by the
             // _maxTimesAtGoal value. If the player has not reached the goal this many
             // times yet, then reset the player's character position and obstacles on the
             // game board after a delay of 2000 milliseconds (2 seconds)
             setTimeout(reset, 2000);
         } else {
-
             // If the player has reached the goal 5 times, the game has been won!
             gameWon();
         }
@@ -298,7 +295,6 @@ window.requestAnimationFrame = (function(){
     // Define a function to be called when the game board needs to be reset, such as when
     // the player loses a life
     function reset() {
-
         // Reset the variable storing the current time remaining to its initial value
         _timeRemaining = _timeTotal;
 
@@ -307,6 +303,18 @@ window.requestAnimationFrame = (function(){
 
         // Inform other code modules to reset themselves to their initial conditions
         Frogger.observer.publish("reset");
+    }
+
+    function onstart() {
+        _score = 0;
+        _timesAtGoal = 0;
+        _lives = 5;
+
+        reset();
+
+        Frogger.observer.publish("high-score-change", _highScore);
+        Frogger.observer.publish("score-change", _score);
+        Frogger.observer.publish("game-reset", _lives);
     }
 
     // The game loop executes on an interval at a rate dictated by value of the
@@ -362,11 +370,7 @@ window.requestAnimationFrame = (function(){
     // Define a function to kick-start the application and run the game loop, which renders
     // each frame of the game graphics and checks for collisions between the player's
     // character and any obstacles on the game board
-    function start() {
-
-        // Inform other code modules of the initial state of the game's high score
-        Frogger.observer.publish("high-score-change", _highScore);
-
+    function onload() {
         // Start the game loop running
         gameLoop();
     }
@@ -374,7 +378,9 @@ window.requestAnimationFrame = (function(){
     // Execute the start() function to kick off the game loop once the "game-load" event
     // is fired. We'll trigger this event after we've configured the rest of our code
     // modules for the game
-    Frogger.observer.subscribe("game-load", start);
+    Frogger.observer.subscribe("game-load", onload);
+
+    Frogger.observer.subscribe("game-start", onstart);
 
     // Execute the playerAtGoal() function when another code module informs us that the
     // player has reached the goal
@@ -1051,36 +1057,31 @@ Frogger.ImageSprite.prototype = {
     // the properties and settings from the game board code module
     function initialize(gameBoard) {
 
-        // Define a variable representing the position from the top of the game board
-        // to display the remaining lives
-        var lifePositionTop;
-
         // Store the game board properties and settings in a local variable within this
         // code module
         _gameBoard = gameBoard;
+
+        // Listen for the "render-base-layer" event fired from within the game loop and
+        // execute the render() function, defined further down, when it is called
+        Frogger.observer.subscribe("render-base-layer", render);
+    }
+
+    function onreset(nLives) {
+        // Define a variable representing the position from the top of the game board
+        // to display the remaining lives
+        var lifePositionTop;
 
         // Set the lifePositionTop variable to the appropriate position in the bottom-left
         // corner of the game board
         lifePositionTop = (_gameBoard.numRows - 1) * _gameBoard.grid.height;
 
-        // Define five lives for the player by populating the _lives array with five
+        // Define lives for the player by populating the _lives array with five
         // instances of the Life "class", each one initialized with its starting position
         // from left to right along the bottom-left corner of the game board
-        _lives = [
-
-            // Each life is displayed at the same position from the top of the game board
-            // and each spaced horizontally according to the width of the individual
-            // image so they sit right beside each other
-            new Life(0, lifePositionTop),
-            new Life(1 * Life.prototype.width, lifePositionTop),
-            new Life(2 * Life.prototype.width, lifePositionTop),
-            new Life(3 * Life.prototype.width, lifePositionTop),
-            new Life(4 * Life.prototype.width, lifePositionTop)
-        ];
-
-        // Listen for the "render-base-layer" event fired from within the game loop and
-        // execute the render() function, defined further down, when it is called
-        Frogger.observer.subscribe("render-base-layer", render);
+        _lives = [];
+        for (var i=0; i<nLives; i++) {
+            _lives.push(new Life(i * Life.prototype.width, lifePositionTop));
+        }
     }
 
     // Define a function to render the number of lives remaining on the game board
@@ -1155,6 +1156,8 @@ Frogger.ImageSprite.prototype = {
     // When the game board initializes its properties and settings, execute the
     // initialize() function
     Frogger.observer.subscribe("game-board-initialize", initialize);
+
+    Frogger.observer.subscribe("game-reset", onreset);
 }(Frogger));
 
 // Define a namespace to store the individual obstacles and images to place on the game
@@ -1446,7 +1449,9 @@ Frogger.Character = (function(Frogger) {
         // Define a Boolean variable to indicate whether the player's character is
         // currently frozen in place, as happens temporarily when the player loses a life
         // or reaches the goal
-        _isFrozen = false;
+        _isFrozen = false,
+
+        _awaitStart = true;
 
     // Define a "class" to represent the player's frog character, inheriting from the
     // Frogger.ImageSprite "class". The left and top values passed in on instantiation
@@ -1622,6 +1627,9 @@ Frogger.Character = (function(Frogger) {
             // Publish an event to the rest of the code modules, indicating that the
             // player's position has been moved by the player
             Frogger.observer.publish("player-moved");
+        } else if (_awaitStart) {
+            Frogger.observer.publish("game-start");
+            _awaitStart = false;
         }
     }
 
@@ -1720,6 +1728,9 @@ Frogger.Character = (function(Frogger) {
     // initialize() function
     Frogger.observer.subscribe("game-board-initialize", initialize);
 
+    Frogger.observer.subscribe("game-over", () => {_awaitStart = true; });
+    Frogger.observer.subscribe("game-won", () => {_awaitStart = true; });
+
     // When the player presses the arrow keys on the keyboard, move the player's
     // character in the appropriate direction on the game board
     window.addEventListener("keydown", function(event) {
@@ -1743,6 +1754,7 @@ Frogger.Character = (function(Frogger) {
         }
     }, false);
 
+    // support swipe to move
     Frogger.hammertime.on('swipe', function(ev) {
         if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
             move(ev.deltaX > 0 ? Frogger.direction.RIGHT : Frogger.direction.LEFT);
@@ -1750,32 +1762,6 @@ Frogger.Character = (function(Frogger) {
             move(ev.deltaY > 0 ? Frogger.direction.DOWN : Frogger.direction.UP);
         }
     });
-/*
-    // When the player taps in certain places on the game board on their touch-sensitive
-    // screen, move the player's character in the appropriate direction on the game board
-    // according to where the screen has been tapped. This is useful since users with
-    // touch screens are typically on mobile devices that do not have access to
-    // physical keyboards to press the arrow keys to move the character.
-    Frogger.canvas.addEventListener("touchstart", function(event) {
-
-        // Get a reference to the position of the touch on the screen in pixels from the
-        // top-left position of the touched element, in this case the game board
-        var touchLeft = event.targetTouches[0].clientX,
-            touchTop = event.targetTouches[0].clientY;
-
-        // Execute the move() function, passing along the correct direction based on the
-        // position tapped on the game board
-        if (touchLeft < (Frogger.drawingSurfaceWidth / 8)) {
-            move(Frogger.direction.LEFT);
-        } else if (touchLeft > (3 * Frogger.drawingSurfaceWidth / 8)) {
-            move(Frogger.direction.RIGHT);
-        } else if (touchTop < (Frogger.drawingSurfaceHeight / 8)) {
-            move(Frogger.direction.UP);
-        } else if (touchTop > (3 * Frogger.drawingSurfaceHeight / 8)) {
-            move(Frogger.direction.DOWN);
-        }
-    }, false);
-*/
 
     // Expose the local getTop(), getPosition() and setPosition() methods so they are
     // available to other code modules
